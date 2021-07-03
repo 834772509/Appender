@@ -1,5 +1,7 @@
 # Appender
 
+[简体中文](README.zh.md) [English](README.md)
+
 ## Introduction
 
 `Appender` is a tool for adding, reading and exporting additional resources.
