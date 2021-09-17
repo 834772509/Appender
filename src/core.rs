@@ -2,13 +2,16 @@ use std::path::Path;
 use std::error::Error;
 use std::fs::{OpenOptions, File};
 use std::io::{Write, Read, SeekFrom, Seek};
-use crate::util::{find_subsequence, compareVersion, compressionFile};
-use serde::{Serialize, Deserialize};
 use std::convert::TryFrom;
 use std::fs;
+use std::cmp::Ordering;
+use serde::{Serialize, Deserialize};
+use memchr::memmem;
+use crate::util::{compressionFile, decompressFile};
 
-/// 缓冲区大小（8KB）
-pub const BUFFER_SIZE: usize = 1024 * 8;
+
+/// 缓冲区大小（512KB）
+pub const BUFFER_SIZE: usize = 1024 * 512;
 
 /// 资源最大大小（1024GB）
 pub const MAX_LENGTH_SIZE: u64 = 1024 * 1024 * 1024 * 1024;
@@ -100,16 +103,17 @@ const END_IDENTIFIER: [u8; 5] = [0x4F, 0x44, 0x45, 0x4E, 0x44];
 /// 2. 资源文件
 /// 3. 资源ID（不可重复）
 /// 4. 输出文件(可选)
-pub fn addResource(targetFilePath: &Path, sourceFilePath: &Path, id: &str, compressionGrade: Option<u8>, outputPath: Option<&Path>) -> Result<(), Box<dyn Error>> {
+pub fn addResource(targetFilePath: &Path, sourceFilePath: &Path, id: &str, compressionGrade: Option<u32>, outputPath: Option<&Path>) -> Result<(), Box<dyn Error>> {
     // 打开资源文件
     let sourceFilePath = if sourceFilePath.is_relative() { targetFilePath.parent().unwrap().join(sourceFilePath) } else { sourceFilePath.to_path_buf() };
     let mut sourceFile = File::open(&sourceFilePath)?;
     let sourceName = &sourceFilePath.file_name().unwrap().to_str().unwrap();
 
+    // 处理压缩资源
+    let tempFilePath = &*sourceFilePath.parent().unwrap().join("temp");
     if let Some(grage) = compressionGrade {
-        let compressFile = &*sourceFilePath.parent().unwrap().join("temp");
-        compressionFile(&*sourceFilePath, compressFile, grage)?;
-        sourceFile = File::open(&compressFile)?;
+        compressionFile(&*sourceFilePath, tempFilePath, grage)?;
+        sourceFile = File::open(&tempFilePath)?;
     }
     let sourceLength = sourceFile.metadata()?.len();
 
@@ -129,7 +133,7 @@ pub fn addResource(targetFilePath: &Path, sourceFilePath: &Path, id: &str, compr
     };
 
     // 插入标识头
-    let head = ResourceHead::new(id, sourceLength,sourceLength, sourceName, compressMode).to_bytes()?;
+    let head = ResourceHead::new(id, sourceLength, sourceLength, sourceName, compressMode).to_bytes()?;
     if head.len() != ResourceHead::default().to_bytes()?.len() {
         return Err(Box::try_from("The resource information is not standard, please make sure that there are no Chinese symbols in the information").unwrap());
     }
@@ -147,6 +151,11 @@ pub fn addResource(targetFilePath: &Path, sourceFilePath: &Path, id: &str, compr
 
     // 插入尾部标识
     targetFile.write_all(&END_IDENTIFIER)?;
+
+    // 清除临时压缩资源
+    if tempFilePath.exists(){
+        fs::remove_file(&tempFilePath)?;
+    }
     Ok(())
 }
 
@@ -170,7 +179,8 @@ pub fn exportResource(targetFilePath: &Path, id: &str, outputPath: &Path) -> Res
         let nbytes = &sourceFile.read(&mut buffer).unwrap();
 
         // 如果找到了资源
-        if let Some(size) = find_subsequence(&buffer, &*defaultResourceHead.getHead()) {
+        // if let Some(size) = find_subsequence(&buffer, &*defaultResourceHead.getHead()) {
+        if let Some(size) = memmem::Finder::new(&*defaultResourceHead.getHead()).find(&buffer) {
             // 资源文件头起始位置(我也不知道为什么要减8)
             let startSize = BUFFER_SIZE * (count - 1) + size - 8;
 
@@ -214,21 +224,17 @@ pub fn exportResource(targetFilePath: &Path, id: &str, outputPath: &Path) -> Res
                 // 写出文件(处理相对路径)
                 let outputPath = if outputPath.is_relative() { targetFilePath.parent().unwrap().join(outputPath) } else { outputPath.to_path_buf() };
                 let outputPath = if outputPath.is_dir() { outputPath.join(config.Name.trim()) } else { outputPath };
-                let mut outputFile = File::create(outputPath)?;
+                let mut outputFile = File::create(&outputPath)?;
 
                 sourceFile.seek(SeekFrom::Start((startSize + defaultResourceHead.getLen() as usize) as u64))?;
 
                 // 循环读取并写出资源文件
                 loop {
                     let nbytes = sourceFile.read(&mut buffer)?;
-                    if config.Compress == CompressMode::Compress {
-                        // buffer = <[u8; 8192]>::try_from(decompress_to_vec(&buffer).unwrap()).unwrap();
-                        // nbytes = buffer.len();
-                        // println!("{:?}", data);
-                    }
 
                     // 判断是否找到资源尾
-                    if let Some(size) = find_subsequence(&buffer, END_IDENTIFIER.as_ref()) {
+                    // if let Some(size) = find_subsequence(&buffer, END_IDENTIFIER.as_ref()) {
+                    if let Some(size) = memmem::Finder::new(END_IDENTIFIER.as_ref()).find(&buffer) {
                         outputFile.write_all(&buffer[..size])?;
                         break;
                     } else {
@@ -236,8 +242,23 @@ pub fn exportResource(targetFilePath: &Path, id: &str, outputPath: &Path) -> Res
                     }
                 }
 
+                // 处理压缩资源
+                if config.Compress == CompressMode::Compress {
+                    let actualFile = outputPath.parent().unwrap().join("actualFile");
+                    decompressFile(&outputPath, &actualFile)?;
+                    // 替换原资源文件
+                    fs::remove_file(&outputPath)?;
+                    fs::rename(actualFile, &outputPath)?;
+
+                    // buffer = <[u8; 8192]>::try_from(decompress_to_vec(&buffer).unwrap()).unwrap();
+                    // nbytes = buffer.len();
+                    // println!("{:?}", data);
+                }
+
                 // 文件释放完成，检查文件大小
                 if outputFile.metadata()?.len() != config.Size.trim().parse()? {
+                    // 删除释放错误的文件
+                    fs::remove_file(&outputPath)?;
                     return Err(Box::try_from("The resource to be exported is incomplete").unwrap());
                 }
 
@@ -248,16 +269,20 @@ pub fn exportResource(targetFilePath: &Path, id: &str, outputPath: &Path) -> Res
             sourceFile.seek(SeekFrom::Start(oldSize))?;
         }
 
-        // 如果文件搜寻完毕
+        // 如果文件搜寻完毕仍未找到资源信息
         if nbytes < &buffer.len() {
             return Err(Box::try_from("Resource not found").unwrap());
         }
     }
 }
 
-
-/// 获取指定文件的资源列表
-pub fn getResourceList(targetFilePath: &Path) -> Result<Vec<ResourceHead>, Box<dyn Error>> {
+/// 寻找资源配置 - 从头至尾
+/// # 参数
+/// 1. 目标文件
+/// 2. 回调函数(配置位置, 资源配置)
+/// # 返回值
+/// 资源配置 数组
+pub fn _findResourcesConfig(targetFilePath: &Path, callback: fn(startSize: usize, config: &ResourceHead)) -> Result<Vec<ResourceHead>, Box<dyn Error>> {
     let defaultResourceHead = ResourceHead::default();
 
     // 打开目标文件
@@ -274,10 +299,10 @@ pub fn getResourceList(targetFilePath: &Path) -> Result<Vec<ResourceHead>, Box<d
         let nbytes = &sourceFile.read(&mut buffer).unwrap();
 
         // 如果找到了资源
-        if let Some(size) = find_subsequence(&buffer, &*defaultResourceHead.getHead()) {
+        // if let Some(size) = find_subsequence(&buffer, &*defaultResourceHead.getHead()) {
+        if let Some(size) = memmem::Finder::new(&*defaultResourceHead.getHead()).find(&buffer) {
             // 资源文件头起始位置(我也不知道为什么要减8)
             let startSize = BUFFER_SIZE * (count - 1) + size - 8;
-
             let oldSize = sourceFile.stream_position().unwrap();
 
             // 偏移读取配置
@@ -285,15 +310,60 @@ pub fn getResourceList(targetFilePath: &Path) -> Result<Vec<ResourceHead>, Box<d
             sourceFile.seek(SeekFrom::Start(startSize as u64))?;
             sourceFile.read_exact(&mut configBuffer)?;
 
-            // 解析配置
-            let config = ResourceHead::from(&configBuffer)?;
-            configs.push(config);
+            let config = ResourceHead::from(&configBuffer);
+            if let Err(_e) = config {
+                continue;
+            }
+            let config = config.unwrap();
+            // println!("在标识头位置: {} 找到配置 {:?}", startSize,config);
 
+            callback(startSize, &config);
+            configs.push(config);
             sourceFile.seek(SeekFrom::Start(oldSize))?;
         }
 
         // 如果文件搜寻完毕
-        if nbytes < &buffer.len() { break; }
+        if nbytes < &buffer.len() {
+            break;
+        }
     }
     Ok(configs)
+}
+
+/// 寻找字节（速度较慢）
+/// # 返回值
+/// 返回找到的字节位置
+fn _find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack.windows(needle.len()).position(|window| window == needle)
+}
+
+/// 比较版本号大小
+fn compareVersion(version1: &str, version2: &str) -> Ordering {
+    let nums1: Vec<&str> = version1.split('.').collect();
+    let nums2: Vec<&str> = version2.split('.').collect();
+    let n1 = nums1.len();
+    let n2 = nums2.len();
+
+    // 比较版本
+    for i in 0..std::cmp::max(n1, n2) {
+        let i1 = if i < n1 {
+            nums1[i].parse::<i32>().unwrap()
+        } else {
+            0
+        };
+        let i2 = if i < n2 {
+            nums2[i].parse::<i32>().unwrap()
+        } else {
+            0
+        };
+        if i1 != i2 {
+            return if i1 > i2 {
+                Ordering::Greater
+            } else {
+                Ordering::Less
+            };
+        }
+    }
+    // 版本相等
+    Ordering::Equal
 }

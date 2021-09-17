@@ -1,16 +1,13 @@
-use crate::core::{addResource, exportResource, ResourceHead, getResourceList, CompressMode};
-use std::path::PathBuf;
-use std::fs;
-use std::any::Any;
+use crate::core::{addResource, exportResource, ResourceHead, CompressMode, findResourcesConfig};
+use std::path::{PathBuf};
+use std::{fs};
 
 lazy_static! {
     static ref ID: String = "1".to_string();
-    // static ref BASE_PATH: PathBuf = PathBuf::from(r"D:\Project\back-end\Rust\Appender\test");
-    static ref BASE_PATH: PathBuf = PathBuf::from(r"C:\Users\Administrator\Desktop");
+    static ref BASE_PATH: PathBuf = PathBuf::from(r"D:\Project\back-end\Appender\test");
     static ref TARGET_FILE: PathBuf = BASE_PATH.join("Notepad.exe");
-    static ref SOURCE_FILE: PathBuf = BASE_PATH.join("课堂资料day01_21.zip");
-    // static ref SOURCE_FILE2: PathBuf = BASE_PATH.join("Roberto_Cacciapaglia.pdf");
-    static ref OUTPUT_PATH: PathBuf = BASE_PATH.join("输出.zip");
+    static ref SOURCE_FILE: PathBuf = BASE_PATH.join("hh.exe");
+    static ref OUTPUT_PATH: PathBuf = BASE_PATH.join("输出.exe");
 }
 
 /// 增加资源测试
@@ -23,8 +20,7 @@ fn addResourceTest() {
 /// 释放资源测试
 #[test]
 fn exportResourceTest() {
-    // exportResource((&*TARGET_FILE).as_ref(), &ID, OUTPUT_PATH.as_ref()).unwrap();
-    exportResource(&*PathBuf::from(r"C:\Users\Administrator\Desktop\notepad.exe"), "1", &*PathBuf::from(r"C:\Users\Administrator\Desktop")).unwrap();
+    exportResource((&*TARGET_FILE).as_ref(), &ID, OUTPUT_PATH.as_ref()).unwrap();
     println!("资源释放成功");
 }
 
@@ -45,6 +41,14 @@ fn autoTest() {
     println!("测试成功");
 }
 
+extern crate test;
+use test::Bencher;
+/// 性能测试 - 释放资源
+#[bench]
+fn bench_Test(b: &mut Bencher) {
+    b.iter(|| exportResourceTest());
+}
+
 /// 实例测试
 #[test]
 fn Test() {
@@ -54,7 +58,7 @@ fn Test() {
     let resource = ResourceHead::new("1", 39278156, 100,"day01_21.zip", CompressMode::None);
     // println!("{:?}", resource);
 
-    let bin = &resource.to_bytes().unwrap();
+    // let bin = &resource.to_bytes().unwrap();
     // println!("{:?}", bin);
 
     // Length
@@ -89,8 +93,23 @@ pub struct Astruct {
     CompressMode: CompressMode,
 }
 
+// 压缩、解压 测试
 #[test]
-fn test3() {
-    compressionFile(&*PathBuf::from(r"D:\Project\back-end\Rust\Appender\test\hh.exe"), &*PathBuf::from(r"D:\Project\back-end\Rust\Appender\test\temp"), 5);
-    // decompressFile(&*PathBuf::from(r"D:\Project\back-end\Rust\Appender\test\temp"), &*PathBuf::from(r"D:\Project\back-end\Rust\Appender\test\temp.exe"));
+fn CompressionTest() {
+    let sourcePath = PathBuf::from(r"D:\Project\back-end\Appender\test\hh.exe");
+    let targetPath = PathBuf::from(r"D:\Project\back-end\Appender\test\temp");
+    let dePath = PathBuf::from(r"D:\Project\back-end\Appender\test\temp.exe");
+
+    println!("=============压缩=============");
+    compressionFile(&*sourcePath, &*targetPath, 5);
+    println!("=============解压=============");
+    decompressFile(&*targetPath, &*dePath);
+}
+
+#[test]
+fn test4(){
+    findResourcesConfig(&*PathBuf::from(r"D:\Project\FirPE\Win10PE\test.wim"), |startSize: usize,config: &ResourceHead| {
+        println!("{:?}", config);
+    });
+    println!("============");
 }

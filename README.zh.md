@@ -36,11 +36,12 @@
 
 - 基本使用: `Appender.exe add D:\Program.exe D:\file.zip Archive`
 - 输出新文件: `Appender.exe add D:\Program.exe D:\file.zip Archive D:\Program-new.exe`
+- 设置压缩(0-9等级): `Appender.exe add D:\Program.exe D:\file.zip Archive -c 5`
 
 ### 释放资源
 
 `Appender.exe export 目标文件 资源ID 输出路径`
 
 - 指定输出路径(保留原文件名): `Appender.exe export D:\Program.exe Archive D:\`
-- 指定输出路径(自定义文件名)`Appender.exe export D:\Program.exe Archive D:\file.zip`
+- 指定输出路径(自定义文件名): `Appender.exe export D:\Program.exe Archive D:\file.zip`
 - 输出到目标文件目录下: `Appender.exe export D:\Program.exe Archive file.zip`

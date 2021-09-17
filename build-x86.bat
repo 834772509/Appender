@@ -26,7 +26,7 @@ call "%VC_LTL_Root%\config\config.cmd"
 
 :build
 rem We use static CRT because we don't want to depend on VC-LTL CRT redistribute
-set RUSTFLAGS=--codegen target-feature=+crt-static
+set RUSTFLAGS=--codegen target-feature=+crt-static -Clink-args=/subsystem:console,5.01
 
 rem Build Rust project via cargo
 cargo build --release --target=i686-pc-windows-msvc

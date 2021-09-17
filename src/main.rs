@@ -1,5 +1,8 @@
 // 禁用变量命名警告
 #![allow(non_snake_case)]
+// 运行使用基准测试
+#![feature(test)]
+
 
 #[macro_use]
 extern crate lazy_static;
@@ -9,7 +12,7 @@ mod util;
 mod core;
 
 #[cfg(test)]
-mod test;
+mod tests;
 
 use std::path::{PathBuf, Path};
 use clap::{Arg, SubCommand, AppSettings, App};
@@ -41,13 +44,13 @@ fn main() {
                     .index(3))
                 .arg(Arg::with_name("newFilePath")
                     .help("new file path")
-                    .index(4)
-                // .arg(Arg::with_name("compression")
-                //     .short("c")
-                //     .long("compression")
-                //     .value_name("compression")
-                //     .default_value("5")
-                //     .help("compression")
+                    .index(4))
+                .arg(Arg::with_name("compression")
+                    .short("c")
+                    .long("compression")
+                    .value_name("compression")
+                    .default_value("1")
+                    .help("compression grade(0-9)")
                 ),
             // 释放资源
             SubCommand::with_name("export")
@@ -74,11 +77,11 @@ fn main() {
         let resources = PathBuf::from(matches.value_of("Resources").unwrap());
         let id = matches.value_of("id").unwrap();
         let outputFile = matches.value_of("newFilePath").map(|path| Path::new(path));
-        // let compression = matches.value_of("compression").unwrap();
+        let compressionGrade = matches.value_of("compression").map(|grade| grade.parse::<u32>().unwrap());
 
-        println!("Adding {} resources id {} to {}......", resources.to_str().unwrap(), id, targerFile.to_str().unwrap());
-        if let Err(e) = addResource(&*targerFile, &*resources, id,None, outputFile) {
-            println!("Resource increase failed: {}",e);
+        println!("Adding \"{}\" resources id \"{}\" to \"{}\"......", resources.to_str().unwrap(), id, targerFile.to_str().unwrap());
+        if let Err(e) = addResource(&*targerFile, &*resources, id, compressionGrade, outputFile) {
+            println!("Resource increase failed: {}", e);
             return;
         }
         println!("Resources increase successfully");
@@ -89,9 +92,9 @@ fn main() {
         let targetFile = PathBuf::from(matches.value_of("TargetFile").unwrap());
         let id = matches.value_of("id").unwrap();
         let outputPath = PathBuf::from(matches.value_of("outputPath").unwrap());
-        println!("export resources id \"{}\" from {} to {}", id, targetFile.to_str().unwrap(), outputPath.to_str().unwrap());
+        println!("export resources id \"{}\" from \"{}\" to \"{}\"", id, targetFile.to_str().unwrap(), outputPath.to_str().unwrap());
         if let Err(e) = exportResource(&*targetFile, id, &*outputPath) {
-            println!("Resource export failed: {}",e);
+            println!("Resource export failed: {}", e);
             return;
         }
         println!("Resource export successfully");

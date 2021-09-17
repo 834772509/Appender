@@ -35,11 +35,12 @@ We use the `resource ID` to mark the file. The `resource ID` can be any text les
 
 - Basic usage: `Appender.exe add D:\Program.exe D:\file.zip Archive`
 - Output new file: `Appender.exe add D:\Program.exe D:\file.zip Archive D:\Program-new.exe`
+- Set compression (0-9 level): `Appender.exe add D:\Program.exe D:\file.zip Archive -c 5`
 
 ### Release resources
 
 `Appender.exe export targetFile resourceID outputPath`
 
 - Specify the output path (keep the original file name): `Appender.exe export D:\Program.exe Archive D:\`
-- Specify the output path (custom file name) `Appender.exe export D:\Program.exe Archive D:\file.zip`
+- Specify the output path (custom file name): `Appender.exe export D:\Program.exe Archive D:\file.zip`
 - Export to the target file directory: `Appender.exe export D:\Program.exe Archive file.zip`
